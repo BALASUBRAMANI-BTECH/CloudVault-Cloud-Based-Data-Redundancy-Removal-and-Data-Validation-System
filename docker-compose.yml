@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # PostgreSQL Relational Database Service
+  # -------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: cloudvault_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: cloudvault_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cloudvault_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cloudvault_net
+
+  # -------------------------------------------------------------
+  # FastAPI Backend API Service
+  # -------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cloudvault_backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/cloudvault_db
+      NEAR_DUPLICATE_THRESHOLD: 90.0
+      REVIEW_THRESHOLD: 70.0
+      ENVIRONMENT: production
+      SECRET_KEY: ${SECRET_KEY:-cloudvault-super-secret-production-key-2026}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - cloudvault_net
+
+  # -------------------------------------------------------------
+  # React Frontend (Nginx Alpine)
+  # -------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: cloudvault_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - cloudvault_net
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  cloudvault_net:
+    driver: bridge
